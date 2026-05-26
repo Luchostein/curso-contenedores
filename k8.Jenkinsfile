@@ -30,8 +30,8 @@ kind: Pod
 spec:
     containers:
         - name: node
-        image: node:24
-        command:
+          image: node:24
+          command:
             - cat
         tty: true
 '''
@@ -39,9 +39,30 @@ spec:
             }
             steps {
                 container('node') {
-                    sh 'kubectl version --client'
                     sh 'node --version'
                     sh 'npm --version'
+                }
+            }
+        }
+        stage('Tercer paso') {
+            agent {
+                kubernetes {
+                    yaml: '''
+apiVersion: v1
+kind: Pod
+spec:
+    containers:
+        - name: kubectl
+          image: alpine/k8s:1.34.1
+          command:
+            - cat
+          tty: trye
+'''
+                }
+            }
+            steps {
+                container('kubectl') {
+                    sh 'kubectl version --client'
                 }
             }
         }

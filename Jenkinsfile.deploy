@@ -5,6 +5,12 @@ pipeline {
             yamlFile 'agent-node.yaml'
         }
     }
+    environment{
+        IMAGE_NAME = 'curso-contenedores'
+        DH_REPO = 'carlosmarind/curso-contenedores'
+        GH_REPO = 'ghcr.io/carlosmarind/curso-contenedores'
+        K8S_NAMESPACE = 'curso-contenedores'
+    }
     stages {
         stage('CI - pnpm'){
             stages {
@@ -55,8 +61,54 @@ pipeline {
                         }
                     }
                 }
+                stage('CI - Obtener semver'){
+                    steps{
+                        container('pnpm'){
+                            script {
+                                env.APP_SEMANTIC_VERSION = sh(
+                                    script: '''
+                                        node -p "require('./package.json').version"
+                                    ''',
+                                    returnStdout:true
+                                ).trim()
+                                echo "Version semantica detectada : ${env.APP_SEMANTIC_VERSION}"
+                            }
+                        }
+                    }
+                }
             }
         }
+        stage('CD - build y push imagen') {
+            steps {
+                script {
+                    if(!env.APP_SEMANTIC_VERSION?.trim()){
+                        error('APP_SEMANTIC_VERSION no esta definido')
+                    }
+                }
+                container('buildkit'){
+                    sh '''
+                        export DOCKER_CONFIG=/docker-configs/dockerhub
+                        test -s "${DOCKER_CONFIG}/config.json"
 
+                        buildctl-daemonless.sh build \
+                        --frontend dockerfile.v0 \
+                        --local context=. \
+                        --local dockerfile=. \
+                        --output type=image,name=${DH_REPO}:latest,push=true
+
+                        buildctl-daemonless.sh build \
+                        --frontend dockerfile.v0 \
+                        --local context=. \
+                        --local dockerfile=. \
+                        --output type=image,name=${DH_REPO}:${APP_SEMANTIC_VERSION},push=true
+
+                        export DOCKER_CONFIG=/docker-configs/github
+                        test -s "${DOCKER_CONFIG}/config.json"
+
+                    '''
+                }
+            }
+
+        }
     }
 }
