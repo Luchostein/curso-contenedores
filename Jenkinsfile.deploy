@@ -1,0 +1,62 @@
+pipeline {
+    agent {
+        kubernetes {
+            defaultContainer 'pnpm'
+            yamlFile 'agent-node.yaml'
+        }
+    }
+    stages {
+        stage('CI - pnpm'){
+            stages {
+                stage('CI - Configuracion de pnpm y node'){
+                    steps {
+                        container('pnpm'){
+                            sh '''
+                                pnpm runtime set node 24 -g
+                                node --version
+                                pnpm --version
+                            '''
+                        }
+                    }
+                }
+                stage('CI - Instalacion de dependencias'){
+                    steps {
+                        container('pnpm'){
+                            sh '''
+                                pnpm install --frozen-lockfile
+                            '''
+                        }
+                    }
+                }
+                stage('CI - Revsion de linter'){
+                    steps {
+                        container('pnpm'){
+                            sh '''
+                                pnpm lint
+                            '''
+                        }
+                    }
+                }
+                stage('CI - Revision de linter'){
+                    steps {
+                        container('pnpm'){
+                            sh '''
+                                pnpm test
+                            '''
+                        }
+                    }
+                }
+                stage('CI - Ejecucion del build'){
+                    steps {
+                        container('pnpm'){
+                            sh '''
+                                pnpm build
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+
+    }
+}
