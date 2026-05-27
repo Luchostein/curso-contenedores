@@ -5,7 +5,8 @@ import { isDbEnabled } from './config/app.config';
 
 @Injectable()
 export class AppService {
-  private leaks: number[][] = []; // aquí guardamos los "leaks"
+  private readonly memoryTaskMb = 100;
+  private readonly memoryTaskDurationMs = 60000;
 
   constructor(private readonly moduleRef: ModuleRef) {}
 
@@ -41,26 +42,51 @@ export class AppService {
   }
 
   /**
-   * Reserva memoria en RAM y la mantiene referenciada para simular fuga de memoria.
+   * Reserva memoria en RAM mientras la solicitud esta abierta.
    *
    * Qué hace:
-   * - Crea un arreglo de numeros aleatorios del tamano indicado en MB.
-   * - Guarda el arreglo en `this.leaks` para evitar que el recolector lo libere.
+   * - Crea un Buffer fijo de 100 MB.
+   * - Mantiene la solicitud abierta por 60 segundos.
+   * - Si el cliente cierra la conexion antes, termina la espera.
    *
    * Como se usa:
-   * - Pasa el parametro `size` (MB) al invocar el endpoint/controlador asociado.
-   * - Llamadas repetidas incrementan el uso de memoria y permiten probar limites de RAM.
+   * - Cada conexion concurrente consume aproximadamente 100 MB.
+   * - Al terminar la solicitud, la memoria queda disponible para el recolector.
    */
-  runMemoryTask(size: number): string {
-    const arr: number[] = [];
+  async runMemoryTask(abortSignal?: AbortSignal): Promise<string> {
+    let memoryBlock: Buffer | null = Buffer.alloc(
+      this.memoryTaskMb * 1024 * 1024,
+      1,
+    );
 
-    for (let i = 0; i < (size * 1024 * 1024) / 8; i++) {
-      arr.push(Math.random());
+    try {
+      await this.waitForMemoryTask(abortSignal);
+      const reservedBytes = memoryBlock.byteLength;
+      void reservedBytes;
+      return `Reservados ${this.memoryTaskMb} MB de memoria durante la solicitud.`;
+    } finally {
+      memoryBlock = null;
+      void memoryBlock;
     }
+  }
 
-    this.leaks.push(arr);
+  private waitForMemoryTask(abortSignal?: AbortSignal): Promise<void> {
+    return new Promise((resolve) => {
+      if (abortSignal?.aborted) {
+        resolve();
+        return;
+      }
 
-    return `Alojados ~${size} MB de memoria. Total de fuga de memoria: ${this.leaks.length}`;
+      const timeout = setTimeout(resolve, this.memoryTaskDurationMs);
+
+      const finish = () => {
+        clearTimeout(timeout);
+        abortSignal?.removeEventListener('abort', finish);
+        resolve();
+      };
+
+      abortSignal?.addEventListener('abort', finish, { once: true });
+    });
   }
 
   getLiveness() {
